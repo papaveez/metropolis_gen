@@ -8,7 +8,7 @@
 #include "../generation/tensor_field.h"
 #include "render.h"
 #include "../generation/generator.h"
-#include "render_roads.h"
+#include "../const.h"
 
 static constexpr double defaultDecay = 5;
 
@@ -46,6 +46,15 @@ private:
     TensorField* tf_ptr_;
     RoadNetworkGenerator* generator_ptr_;
 
+    #ifdef SPATIAL_TEST
+    Streamline current_streamline_;
+    Direction current_dir_ = Major;
+    std::vector<StreamlineNode> new_nodes_;
+
+    void test_spatial();
+    void test_draw_spatial(qnode_id head_ptr);
+    #endif
+
     UIMode current_mode_  = FieldEditor;
     FieldEditorTool tool_ = GridBrush;
 
@@ -73,7 +82,6 @@ private:
 
     void render_hud();
 
-    void test_draw_spatial(qnode_id head_ptr);
 
 public:
     Renderer(RenderContext& ctx, TensorField* tf_ptr, RoadNetworkGenerator* gen_ptr);

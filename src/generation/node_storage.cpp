@@ -1,4 +1,3 @@
-#include <iostream>
 #include <iterator>
 #include <limits>
 
@@ -40,125 +39,136 @@ int Streamlines::size(Direction dir) {
 //  SECTION: Spatial
 
 
-DVector2 Spatial::node_to_pos(const node_id& id) const {
+const DVector2& Spatial::node_to_pos(const node_id& id) const {
     return (*all_nodes_)[id].pos;
 }
 
-    
-bool Spatial::is_leaf(qnode_id id) {
-    QuadNode& node = qnodes_[id];
+const Direction& Spatial::node_to_dir(const node_id& id) const {
+    return (*all_nodes_)[id].dir;
+}
 
-    for (int i=0;i<4;i++) {
-        if (node.children[i] != QNullNode) return false;
+// array of 4 intervals representing [TopLeft, TopRight, BottomLeft, BottomRight]
+std::array<std::pair<char, std::list<node_id>>, 4> 
+Spatial::partition(const Box<double>& bbox, std::list<node_id>& s) {
+    DVector2 mid = middle(bbox.min, bbox.max);
+
+    auto is_right  = [&mid, this](const node_id& id) { return node_to_pos(id).x > mid.x; };
+    auto is_bottom = [&mid, this](const node_id& id) { return node_to_pos(id).y > mid.y; };
+
+    std::array<std::pair<char, std::list<node_id>>, 4> out;
+
+    // 4 way partition
+    for (auto it=s.begin(); it!=s.end();) {
+        iter curr = it;
+        std::advance(it, 1);
+        
+        int q = is_right(*curr) + (is_bottom(*curr)<<1);
+        out[q].first |= 1<<(node_to_dir(*curr));
+        out[q].second.splice(out[q].second.end(), s, curr);
+    }
+
+    return out;
+};
+
+bool Spatial::is_leaf(qnode_id id) const {
+    const QuadNode& root_node = qnodes_[id];
+    for (int i=0; i<4;++i) {
+        if (root_node.children[i] != QNullNode) return false;
     }
     return true;
 }
 
-   
-void Spatial::promote_leaf_data(qnode_id head_ptr) {
-    if (qnodes_[head_ptr].data.size() == 0) return;
+void Spatial::subdivide(qnode_id head_ptr) {
+    const Box<double> bbox = qnodes_[head_ptr].bbox;
 
-    // get position of first node in data range to decide which quadrant to promote to 
-    DVector2 pos = node_to_pos(*(qnodes_[head_ptr].data.begin()));
+    auto parts = partition(bbox, qnodes_[head_ptr].data);
 
-    // corresponding quadrant in bounding box
-    Quadrant q = qnodes_[head_ptr].bbox.which_quadrant(pos);
-    Box<double> sub_bbox = qnodes_[head_ptr].bbox.get_quadrant(q);
+    for (int i=0;i<4;++i) {
+        std::list<node_id>& sublist = parts[i].second;
+        if (sublist.empty()) continue;
 
-    // new leaf node id
-    qnode_id child_ptr = qnodes_.size();
+        char& bitmask = parts[i].first;
 
+        Quadrant q = static_cast<Quadrant>(i);
+        Box<double> sub_bbox = qnodes_[head_ptr].bbox.get_quadrant(q);
 
-    // create new leaf, pointing up to head, with sub_bbox
-    qnodes_.emplace_back(sub_bbox, head_ptr, qnodes_[head_ptr].directions_bitmask);
-    
+        qnode_id child_ptr = qnodes_.size();
+        qnodes_.emplace_back(sub_bbox, head_ptr, bitmask);
+        qnodes_[child_ptr].data = std::move(sublist);
 
-    // exchange data 
-    qnodes_[child_ptr].data = std::move(qnodes_[head_ptr].data);
+        qnodes_[head_ptr].children[q] = child_ptr;
+    }
+}
 
-    
-    // set child pointer of head to the new node
-    qnodes_[head_ptr].children[q] = child_ptr;
+void Spatial::append_leaf_data(qnode_id leaf_ptr, char dir_bitmask, 
+    std::list<node_id>& data) 
+{
+    qnodes_[leaf_ptr].directions_bitmask |= dir_bitmask;
+    qnodes_[leaf_ptr].data.splice(qnodes_[leaf_ptr].data.end(), data);
 }
 
 
-void Spatial::append_leaf_data(qnode_id leaf_ptr, Direction dir, std::list<node_id>& list, iter begin, iter end) {
-    qnodes_[leaf_ptr].directions_bitmask |= (1 << dir);
 
-    qnodes_[leaf_ptr].data.splice(qnodes_[leaf_ptr].data.end(), list, begin, end);
-}
-
+static constexpr const char* q_strs[4] = {"TL", "TR", "BL", "BR"};
 
 void Spatial::insert_rec(int depth, qnode_id head_ptr,
-    Direction dir,
-    std::list<node_id>& list, iter begin, iter end) 
+    char dir_bitmask,
+    std::list<node_id>& list) 
 {
-    // TODO: append can occur if leaf is known to contain different direction
-    if (is_leaf(head_ptr)) {
-        auto next = begin;
-        std::advance(next, 1);
-
-        // breaking clause: one node left to insert (into empty leaf) or depth exceeds max depth
-        // or one node left and 
-        if (
-            (next == end && (
-                qnodes_[head_ptr].data.empty() || 
-                !(qnodes_[head_ptr].directions_bitmask & (1<<dir)))
-            )|| depth >= max_depth_) {
-            append_leaf_data(head_ptr, dir, list, begin, end);
-            return;
-        }
-
-        // otherwise, promote the leaf data to a subquadrant
-        promote_leaf_data(head_ptr);
+    const char* t;
+    switch (dir_bitmask) {
+        case ((1<<Major) + (1<<Minor)):
+            t = "Major & Minor";
+            break;
+        case ((1<<Major)):
+            t = "Major";
+            break;
+        case (1<<Minor):
+            t = "Minor";
+            break;
+        default:
+            t = "???";
+            break;
     }
 
+
+    if (depth >= max_depth_) {
+        append_leaf_data(head_ptr, dir_bitmask, list);
+        return;
+    } else if (is_leaf(head_ptr)) {
+        if (qnodes_[head_ptr].data.size() + list.size() <= leaf_capacity_) {
+            append_leaf_data(head_ptr, dir_bitmask, list);
+            return;
+        }
+        subdivide(head_ptr);
+    }
+
+    qnodes_[head_ptr].directions_bitmask |= dir_bitmask;
+
     Box<double> bbox = qnodes_[head_ptr].bbox;
-    DVector2 mid = middle(bbox.max, bbox.min);
-    auto is_left = [&mid, this](const node_id& id) {return node_to_pos(id).x < mid.x; };
-    auto is_top  = [&mid, this](const node_id& id) {return node_to_pos(id).y < mid.y; };
-
-
-    // partition iterator into the quadrants: 
-    // TL: [Begin, split_x_upper)
-    // TR: [split_x_upper, split_y)
-    // BL: [split_y, split_x_lower)
-    // BR: [split_x_lower, end)
-    iter split_y = std::partition(begin, end, is_top);
-    iter split_x_upper = std::partition(begin, split_y, is_left);
-    iter split_x_lower = std::partition(split_y, end, is_left);
-
-
-    std::pair<iter, iter> partitions[4] = {
-        {begin, split_x_upper},
-        {split_x_upper, split_y},
-        {split_y, split_x_lower},
-        {split_x_lower, end}
-    };
+    auto parts = partition(bbox, list);
     
     ++depth;
 
     for (Quadrant q : {TopLeft, TopRight, BottomLeft, BottomRight}) {
-        auto [part_start, part_end] = partitions[q];
+        auto& [sub_dir_bitmask, sublist] = parts[q];
 
-        if (part_start == part_end) continue;
+        if (sublist.empty()) continue;
+
         qnode_id child_ptr = qnodes_[head_ptr].children[q];
 
         if (child_ptr == QNullNode) {
             child_ptr = qnodes_.size();
-            qnodes_.emplace_back(bbox.get_quadrant(q), head_ptr, dir);
+            qnodes_.emplace_back(bbox.get_quadrant(q), head_ptr, 0);
             qnodes_[head_ptr].children[q] = child_ptr;
         }
         
-        qnodes_[head_ptr].directions_bitmask |= (1<<dir);
 
         insert_rec(
             depth,
             child_ptr,
-            dir,
-            list,
-            part_start,
-            part_end
+            sub_dir_bitmask,
+            sublist
         );
     }
 
@@ -166,45 +176,95 @@ void Spatial::insert_rec(int depth, qnode_id head_ptr,
 
 
 bool 
-Spatial::in_circle_rec(qnode_id head_ptr, Box<double> bbox, 
-    Direction dir, DVector2 centre, double radius2)
+Spatial::in_circle_rec(qnode_id head_ptr,
+    const Box<double>& circubscribed, const Box<double>& inscribed,
+    const char& dir_bitmask, const DVector2& centre, const double& radius2) const
 {
-    if (is_leaf(head_ptr)) {
-        for (node_id id : qnodes_[head_ptr].data) {
-            StreamlineNode node = (*all_nodes_)[id];
-            if (node.dir != dir) continue;
-            DVector2 dist = centre - node.pos;
-            if (dot_product(dist, dist) <= radius2) return true;
-        }
+    const QuadNode& qnode = qnodes_[head_ptr];
 
+    if (!(qnode.directions_bitmask & dir_bitmask)) {
         return false;
     }
-    
-    
-    for (Quadrant q : {TopLeft, TopRight, BottomLeft, BottomRight}) {
-        qnode_id child_ptr = qnodes_[head_ptr].children[q];
 
-        if (child_ptr == QNullNode) continue;
-        QuadNode child_node = qnodes_[child_ptr];
-
-        if (
-            (child_node.bbox & bbox).is_empty()
-            || !(child_node.directions_bitmask & (1<<dir))
-        ) continue;
-
-        if (in_circle_rec(child_ptr, bbox, dir, centre, radius2)) return true;
+    if ((qnode.bbox | inscribed) == inscribed) {
+        return in_bbox_rec(head_ptr, inscribed, dir_bitmask);
     }
 
+    if (is_leaf(head_ptr)) {
+        for (const node_id& id : qnode.data) {
+            if (!((1<<node_to_dir(id)) & dir_bitmask)) continue;
+            DVector2 dist = centre - node_to_pos(id);
+            if (dot_product(dist, dist) <= radius2) return true;
+        }
+        return false;
+    }
+
+    for (Quadrant q : {TopLeft, TopRight, BottomLeft, BottomRight}) {
+        const qnode_id& child_ptr = qnodes_[head_ptr].children[q];
+
+        if (child_ptr == QNullNode) continue;
+        const QuadNode& child_node = qnodes_[child_ptr];
+
+        if (
+            (child_node.bbox & circubscribed).is_empty()
+            || !(child_node.directions_bitmask & dir_bitmask)
+        ) continue;
+
+        if (in_circle_rec(child_ptr, circubscribed, inscribed, dir_bitmask, centre, radius2)) 
+            return true;
+    }
 
     return false;
 }
 
+bool 
+Spatial::in_bbox_rec(qnode_id head_ptr, const Box<double>& bbox,
+        const char& dir_bitmask) const {
+    // assumes qnode.dir_bitmask & dir_bitmask != 0
+    const QuadNode& qnode = qnodes_[head_ptr];
+    // if the current quad's bbox is a subset of the search bbox 
+    if ((bbox | qnode.bbox) == bbox) {
+        // if there are any points here, return true
+        // either the node has children (which in turn must have points)
+        // or the node itself has data
+        return !is_leaf(head_ptr) || !qnode.data.empty();
+    }
+
+    if ((bbox & qnode.bbox).is_empty()) {
+        return false; // boxes dont intersect
+    }
+
+    // at this stage, the bboxes intersect, but not totally
+    // we have to check each node
+    if (is_leaf(head_ptr)) {
+        for (const node_id& id : qnode.data) {
+            if (bbox.contains(node_to_pos(id)) && ((1<<node_to_dir(id)) & dir_bitmask)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    // otherwise, check children
+    for (int i=0;i<4;++i) {
+        // node is null
+        if (qnode.children[i] == QNullNode) continue;
+        // node has no children with dir
+        if ((qnodes_[qnode.children[i]].directions_bitmask & dir_bitmask) == 0) continue;
+
+        if (in_bbox_rec(qnode.children[i], bbox, dir_bitmask)) return true;
+    }
+
+    return false;
+}
 
 Spatial::Spatial(std::vector<StreamlineNode>* all_nodes, 
-    Box<double> dims, int depth) :
+    Box<double> dims, int depth, int leaf_capacity) :
     all_nodes_(all_nodes),
     dimensions_(dims),  
-    max_depth_(depth) 
+    max_depth_(depth),
+    leaf_capacity_(leaf_capacity)
 {
     root_ = 0;
     qnodes_.emplace_back(dimensions_, QNullNode, std::numeric_limits<char>::max());
@@ -221,46 +281,50 @@ void Spatial::reset(Box<double> new_dims) {
     clear();
 }
 
-void Spatial::insert(std::list<node_id> list, Direction dir) { // copy list
-    if (list.size() == 0) return;
+void Spatial::insert_streamline(Streamline s, Direction dir) { // copy list
+    if (s.size() == 0) return;
 
-    iter begin = list.begin();
-    iter end   = list.end();
+    iter begin = s.begin();
+    iter end   = s.end();
 
-    if (*begin == *end) {
+    iter last_node = end;
+    std::advance(last_node, -1);
+
+    if (*begin == *last_node && s.size() > 2) { // if circle
         std::advance(end, -1);
     }
 
+    char dir_bitmask = 1<<dir;
     insert_rec(
         0, 
         root_,
-        dir,
-        list,
-        begin,
-        end
+        dir_bitmask,
+        s
     );
 }
 
-bool Spatial::has_nearby_point(DVector2 centre, double radius, Direction dir) {
+bool Spatial::has_nearby_point(DVector2 centre, double radius, Direction dir) const {
     assert(root_ != QNullNode);
 
-    DVector2 circle_bbox_diagonal = {radius, radius};
+    DVector2 circumscribed_diag = {radius, radius};
+    DVector2 inscribed_diag = circumscribed_diag/M_SQRT2;
 
-    Box<double> circle_bbox = Box(
-        centre - circle_bbox_diagonal, 
-        centre + circle_bbox_diagonal
+    Box<double> inscribed = Box(
+        centre - circumscribed_diag, 
+        centre + circumscribed_diag 
     ) & dimensions_;
 
-    return 
-        (circle_bbox.is_empty() || !(qnodes_[root_].directions_bitmask & (1<<dir)))
-            ? false
-            : in_circle_rec(
-                root_, 
-                circle_bbox, 
-                dir, 
-                centre, 
-                radius*radius
-            );
+    Box<double> circumscribed = Box(
+        centre - inscribed_diag,
+        centre + inscribed_diag 
+    );
+
+    char dir_bitmask = 1<<dir;
+    if (circumscribed.is_empty() || !(qnodes_[root_].directions_bitmask & dir_bitmask)) {
+        return false;
+    }
+
+    return in_circle_rec(root_, circumscribed, inscribed, dir_bitmask, centre, radius*radius);
 }
 
 

@@ -10,6 +10,7 @@
 #include "integrator.h"
 #include "node_storage.h"
 
+#include "../const.h"
 
 
 enum FrontCheck {
@@ -63,6 +64,7 @@ class RoadNetworkGenerator {
     private:
         using seed_queue = std::queue<DVector2>;
         static constexpr int kQuadTreeDepth = 10; // area of 3 pixels at 1920x1080
+        static constexpr int kQuadTreeLeafCapacity = 10;
         Box<double> viewport_;
 
 
@@ -85,7 +87,13 @@ class RoadNetworkGenerator {
         void extend_streamline(RoadType road, Integration& i, Direction dir, bool negate);
         void extend_streamline(RoadType road, Integration& i, Direction dir);
 
+#ifdef SPATIAL_TEST
+    public:
+#endif
         void push_streamline(RoadType road, std::vector<StreamlineNode>& new_nodes, Streamline& streamline, Direction dir);
+#ifdef SPATIAL_TEST
+    private:
+#endif
 
         node_id joining_candidate(RoadType road, node_id id, DVector2 initial_direction);
 
@@ -119,6 +127,8 @@ class RoadNetworkGenerator {
         std::optional<StreamlineNode> get_node(node_id i) const;
         
         bool generate_streamline(RoadType road, DVector2 seed_point, Direction dir);
+
+        int node_count() const;
 
 };
 #endif

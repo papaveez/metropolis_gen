@@ -71,33 +71,107 @@ void Renderer::editor_radial() {
     } 
 }
 
-void Renderer::test_draw_spatial(qnode_id head_ptr) {
-    auto& s = generator_ptr_->spatial_;
+#ifdef SPATIAL_TEST
+void Renderer::test_spatial() {
     assert(ctx_.is_drawing);
     assert(ctx_.is_2d_mode);
+
+    if (IsKeyDown(KEY_SPACE)) {
+        Color col;
+
+        bool has_major = 
+            generator_ptr_->spatial_.has_nearby_point(ctx_.mouse_world_pos, 100, Major);
+        bool has_minor =
+            generator_ptr_->spatial_.has_nearby_point(ctx_.mouse_world_pos, 100, Minor);
+
+        if (has_major && has_minor) {
+            col = GREEN;
+        } else if (has_major) {
+            col = RED;
+        } else if (has_minor) {
+            col= BLUE;
+        } else {
+            col = BLACK;
+        }
+
+        DrawCircleLinesV(ctx_.mouse_world_pos, 100, col);
+
+    }
+
+    if (IsMouseButtonDown(MOUSE_BUTTON_LEFT)) {
+        if (new_nodes_.size()) {
+            if (new_nodes_.size() > 1) {
+                Vector2* pts = new Vector2[new_nodes_.size()];
+                int i = 0;
+                for (auto& n : new_nodes_) {
+                    pts[i] = n.pos;
+                    ++i;
+                }
+                DrawSplineLinear(pts, new_nodes_.size(), 3.0f, current_dir_==Major ? RED : BLUE);
+            }
+            StreamlineNode& last_node = new_nodes_.back();
+            DVector2 diff = last_node.pos - ctx_.mouse_world_pos;
+            if (dot_product(diff, diff) < 1000.0) return;
+        }
+
+        current_streamline_.push_back(new_nodes_.size() + generator_ptr_->node_count());
+        new_nodes_.push_back(StreamlineNode{
+            ctx_.mouse_world_pos,
+            0,
+            current_dir_
+        });
+
+
+        
+    } else if (current_streamline_.size()) {
+        generator_ptr_->push_streamline(Main, new_nodes_, current_streamline_, current_dir_);
+
+        current_streamline_ = {};
+        new_nodes_ = {};
+    } else if (IsKeyPressed(KEY_D)) {
+        current_dir_ = flip(current_dir_);
+    }
+}
+
+void Renderer::test_draw_spatial(qnode_id head_ptr) {
+    auto& s = generator_ptr_->spatial_;
 
     if (head_ptr == QNullNode) return;
     QuadNode node = s.qnodes_[head_ptr];
 
+    Box<double> bbox = node.bbox;
+    Vector2 pos = bbox.min;
+    Color col = BLACK;
+    bool is_major = node.directions_bitmask & (1<<Major);
+    bool is_minor = node.directions_bitmask & (1<<Minor);
+
+    if (is_major && is_minor) {
+        col = GREEN;
+    } else if (is_major) {
+        col = RED;
+    } else if (is_minor) {
+        col = BLUE;
+    }
+    Vector2 dims = bbox.max - bbox.min;
+
+    Rectangle rect = {pos.x, pos.y, dims.x, dims.y};
+
+    DrawRectangleLinesEx(rect, 2.0f, col);
+
     if (s.is_leaf(head_ptr)) {
+        for (auto id: node.data) {
+            std::optional<StreamlineNode> n = generator_ptr_->get_node(id);
+            assert(n);
+            DrawCircleV(n.value().pos, 1.0, n.value().dir == Major ? RED : BLUE);
+        }
     }
     else {
-        Box<double> bbox = node.bbox;
-        DVector2 mid = middle(bbox.min, bbox.max);
-        DVector2 hstart = {bbox.min.x, mid.y};
-        DVector2 hend = {bbox.max.x, mid.y};
-
-        DVector2 vstart = {mid.x, bbox.min.y};
-        DVector2 vend = {mid.x, bbox.max.y};
-
-        DrawLineV(vstart, vend, BLACK);
-        DrawLineV(hstart, hend, BLACK);
         for (auto q : {TopLeft, TopRight, BottomLeft, BottomRight}) {
             test_draw_spatial(node.children[q]);
         }
     }
 }
-
+#endif
 
 void Renderer::render_map() {
     if (current_mode_ != Map) return;
@@ -185,15 +259,29 @@ Renderer::Renderer(
     reset_field_editor();
 }
 
+
 void Renderer::main_loop() {
     assert(ctx_.is_drawing);
 
+    
     ClearBackground(RAYWHITE);
+    #ifdef SPATIAL_TEST
+        BeginMode2D(ctx_.camera); ctx_.is_2d_mode = true; {
+            test_spatial();
+            test_draw_spatial(generator_ptr_->spatial_.root_);
+        } EndMode2D(); ctx_.is_2d_mode = false;
+        // draw current dir
+        
+        auto text = current_dir_ == Major ? "MAJOR" : "MINOR";
+        Color col = current_dir_ == Major ? RED : BLUE;
+        DrawText(text, ctx_.width-200, 10, 30, col);
+
+    #else
     render_tensorfield();
     BeginMode2D(ctx_.camera); ctx_.is_2d_mode = true; {
         render_map();
-        // test_draw_spatial(generator_ptr_->spatial_.root_);
         editor();
     } EndMode2D(); ctx_.is_2d_mode = false;
     render_hud();
+    #endif
 }

@@ -12,19 +12,7 @@
 #include "generation/generator.h"
 #include "generation/tensor_field.h"
 
-#define SCREEN_WIDTH 1700
-#define SCREEN_HEIGHT 1000 
-
-
-Box<double> screen_dims(
-    {0.0, 0.0},
-    {
-        static_cast<double>(SCREEN_WIDTH),
-        static_cast<double>(SCREEN_HEIGHT)
-    }
-);
-
-
+#include "const.h"
 
 
 static std::unordered_map<RoadType, GeneratorParameters> params = {
@@ -33,36 +21,6 @@ static std::unordered_map<RoadType, GeneratorParameters> params = {
     {Main, GeneratorParameters(300, 1900, 400.0, 200.0, 5.0, 1.0, 500.0, 0.1, 0.5, 0.0, 0.0)}
 };
 
-
-
-void test_draw_spatial(RenderContext& ctx, Spatial& s, qnode_id head_ptr) {
-    assert(ctx.is_drawing);
-    assert(ctx.is_2d_mode);
-
-    if (head_ptr == QNullNode) return;
-    QuadNode node = s.qnodes_[head_ptr];
-
-    if (s.is_leaf(head_ptr)) {
-        for (node_id i : node.data) {
-            DrawCircleV((*s.all_nodes_)[i].pos, 2, RED);
-        }
-    }
-    else {
-        Box<double> bbox = node.bbox;
-        DVector2 mid = middle(bbox.min, bbox.max);
-        DVector2 hstart = {bbox.min.x, mid.y};
-        DVector2 hend = {bbox.max.x, mid.y};
-
-        DVector2 vstart = {mid.x, bbox.min.y};
-        DVector2 vend = {mid.x, bbox.max.y};
-
-        DrawLineV(vstart, vend, BLACK);
-        DrawLineV(hstart, hend, BLACK);
-        for (auto q : {TopLeft, TopRight, BottomLeft, BottomRight}) {
-            test_draw_spatial(ctx, s, node.children[q]);
-        }
-    }
-}
 
 int main(int argc, char** argv)
 {

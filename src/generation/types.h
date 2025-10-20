@@ -3,7 +3,6 @@
 
 #include <limits>
 #include <ostream>
-#include <string>
 
 #include "raylib.h"
 
@@ -171,6 +170,10 @@ struct Box {
             if (get_quadrant(q).contains(pos)) return q;
         }
 
+    }
+
+    bool operator==(const Box<T>& other) const {
+        return other.min == min && other.max == max;
     }
 
     // box union.

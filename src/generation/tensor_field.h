@@ -3,7 +3,7 @@
 #include <memory>
 #include <vector>
 
-#include "../SimplexNoise/SimplexNoise.h"
+#include "SimplexNoise.h"
 
 #include "types.h"
 

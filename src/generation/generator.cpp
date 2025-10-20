@@ -1,5 +1,4 @@
 #include <cassert>
-#include <iostream>
 #include <list>
 #include <memory>
 #include <unordered_map>
@@ -52,7 +51,7 @@ RoadNetworkGenerator::RoadNetworkGenerator(
     viewport_(viewport),
     integrator_(std::move(integrator)),
     nodes_(std::vector<StreamlineNode>{}),
-    spatial_(Spatial(&nodes_, viewport_, kQuadTreeDepth)),
+    spatial_(Spatial(&nodes_, viewport_, kQuadTreeDepth, kQuadTreeLeafCapacity)),
     params_(parameters),
     dist_(0.0, 1.0) 
 {
@@ -108,7 +107,7 @@ RoadNetworkGenerator::get_node(node_id i) const {
 
 std::optional<DVector2> 
 RoadNetworkGenerator::get_seed(RoadType road, Direction dir) {
-    seed_queue candidate_queue = seeds_[dir];
+    seed_queue& candidate_queue = seeds_[dir];
 
     DVector2 seed;
     while (!candidate_queue.empty()) {
@@ -124,7 +123,6 @@ RoadNetworkGenerator::get_seed(RoadType road, Direction dir) {
         seed = DVector2 {
             dist_(gen_)*viewport_.width()  + viewport_.min.x,
             dist_(gen_)*viewport_.height() + viewport_.min.y
-
         };
 
         assert(viewport_.contains(seed));
@@ -331,7 +329,7 @@ void RoadNetworkGenerator::push_streamline(RoadType road, std::vector<Streamline
     nodes_.insert(nodes_.end(), new_nodes.begin(), new_nodes.end());
 
     // store nodes in spatial lookup
-    spatial_.insert(streamline, dir);
+    spatial_.insert_streamline(streamline, dir);
    
     // if the streamline has dangling endpoints (non cyclical)
     if (streamline.front() != streamline.back()) {
@@ -426,8 +424,6 @@ int RoadNetworkGenerator::generate_streamlines(RoadType road) {
     std::optional<DVector2> seed = get_seed(road, dir);
     int k = 0;
     while (seed) {
-        std::cout << "Generating seed: " << k << std::endl;
-        std::cout << seed.value() << std::endl;
         if (generate_streamline(road, seed.value(), dir)) {
             k += 1;
             dir = flip(dir);
@@ -460,4 +456,8 @@ void RoadNetworkGenerator::clear() {
 
     streamlines_.clear();
     spatial_.clear();
+}
+
+int RoadNetworkGenerator::node_count() const {
+    return nodes_.size();
 }

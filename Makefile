@@ -1,25 +1,29 @@
 CXX = clang++
 CXXFLAGS = -g -std=c++20 -arch arm64 -I/opt/homebrew/include \
-		   $(shell pkg-config --cflags raylib) \
-		   -Iexternal/raygui/src
+		   $(shell pkg-config --cflags raylib)
 
 LIB = $(shell pkg-config --libs raylib)
 
 SRC_DIR = src
 BUILD_DIR = build
 
+EXTERNAL_DIRS = external/raygui/src external/SimplexNoise/src
 
-SRCS = $(shell find $(SRC_DIR) -name "*.cpp")
-OBJS = $(patsubst $(SRC_DIR)/%.cpp, $(BUILD_DIR)/%.o, $(SRCS))
+CXXFLAGS += $(addprefix -I, $(EXTERNAL_DIRS))
+
+SRCS = $(shell find $(SRC_DIR) -name "*.cpp") \
+	   $(foreach dir, $(EXTERNAL_DIRS), $(shell find $(dir) -name "*.cpp"))
+
+OBJS = $(patsubst %.cpp, $(BUILD_DIR)/%.o, $(SRCS))
+
 TARGET = $(BUILD_DIR)/a.out
 
 all: $(TARGET)
 
-# Ensure all build subdirectories exist
 $(TARGET): $(OBJS)
 	$(CXX) $^ -o $@ $(LIB)
 
-$(BUILD_DIR)/%.o: $(SRC_DIR)/%.cpp
+$(BUILD_DIR)/%.o: %.cpp
 	@mkdir -p $(dir $@)
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
@@ -30,4 +34,3 @@ run: $(TARGET)
 	./$(TARGET)
 
 .PHONY: all clean run
-
