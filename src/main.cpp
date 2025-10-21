@@ -6,8 +6,7 @@
 
 #define RAYGUI_IMPLEMENTATION
 
-#include "render/render.h"
-#include "render/ui.h"
+#include "ui.h"
 
 #include "generation/generator.h"
 #include "generation/tensor_field.h"

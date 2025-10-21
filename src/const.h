@@ -3,10 +3,10 @@
 
 // #define SPATIAL_TEST
 
-#include "generation/types.h"
+#include "types.h"
 
-#define SCREEN_WIDTH 1700
-#define SCREEN_HEIGHT 1000 
+#define SCREEN_WIDTH 1920
+#define SCREEN_HEIGHT 1080
 
 
 static Box<double> screen_dims(

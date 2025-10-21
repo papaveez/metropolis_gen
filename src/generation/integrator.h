@@ -1,34 +1,45 @@
 #pragma once
 
 
-#include "types.h"
+#include "../types.h"
 #include "tensor_field.h"
 
 
 enum Direction : char {
-    Minor = 1,
-    Major = 2
+    Minor = 1 << 0,
+    Major = 1 << 1
 };
 
 Direction flip(Direction dir);
 
 class NumericalFieldIntegrator {
-    private:
-        TensorField* field;
+private:
+    TensorField* field_;
 
-    protected:
-        DVector2 get_vector(DVector2 x, Direction dir, double noise_size, double noise_angle);
+protected:
+    DVector2 get_vector(const DVector2& x, const Direction& dir) const;
 
-    public:
-        NumericalFieldIntegrator(TensorField* _field);
-        virtual ~NumericalFieldIntegrator() = default;
-        virtual DVector2 integrate(DVector2 x, Direction d, double dl, double noise_size, double noise_angle) = 0;
+public:
+    NumericalFieldIntegrator(TensorField* field);
+    virtual ~NumericalFieldIntegrator() = default;
+
+    virtual DVector2 
+    integrate(
+        const DVector2& x, 
+        const Direction& d, 
+        const double& dl
+    ) const = 0;
 };
 
 
 class RK4 : public NumericalFieldIntegrator {
-    public:
-        RK4(TensorField* _field);
+public:
+    RK4(TensorField* _field);
 
-        DVector2 integrate(DVector2 x, Direction dir, double dl, double noise_size, double noise_angle) override;
+    DVector2 
+    integrate(
+        const DVector2& x, 
+        const Direction& d, 
+        const double& dl
+    ) const override;
 };

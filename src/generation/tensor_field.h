@@ -1,11 +1,10 @@
 #pragma once
 
-#include <memory>
-#include <vector>
+#include <limits>
 
-#include "SimplexNoise.h"
+#include "../types.h"
 
-#include "types.h"
+static constexpr double d_epsilon = std::numeric_limits<double>::epsilon();
 
 class Tensor {
     // 2x2 symmetric, traceless matrix represented as
@@ -17,49 +16,51 @@ class Tensor {
         double a;
         double b;
 
-
         Tensor(double a, double b);
         static Tensor from_r_theta(double r, double theta);
         static Tensor from_xy(DVector2 xy);
 
         void set_r_theta();
 
-        std::pair<DVector2, DVector2> eigenvectors();
+        bool is_degenerate() const;
+        DVector2 get_major_eigenvector() const;
+        DVector2 get_minor_eigenvector() const;
 
-        Tensor rotate(double angle);
+        Tensor rotate(const double& angle) const;
 
         Tensor operator+(const Tensor& other) const;
 
         // right scalar mult
-        Tensor operator*(double right) const;
+        Tensor operator*(const double& right) const;
 
 
         // left scalar mult
-        friend Tensor operator*(double left, const Tensor& right);
+        friend Tensor operator*(const double& left, const Tensor& right);
 };
 
 
 class BasisField {
     protected:
-        DVector2 centre;
-        double size;
-        double decay;
+        DVector2 centre_;
+        double size_;
+        double decay_;
+
+        virtual Tensor get_tensor(const DVector2& pos) const = 0;
+        virtual bool force_degenerate(const DVector2& pos);
+        double get_tensor_weight(const DVector2& pos) const;
 
     public:
-        BasisField(DVector2 _centre);
-        BasisField(DVector2 _centre, double _size, double _decay);
+        BasisField(DVector2 centre);
+        BasisField(DVector2 centre, double size, double decay);
         virtual ~BasisField() = default;
 
-        DVector2 get_centre();
-        void set_centre(DVector2 _centre);
-        void set_size(double _size);
-        void set_decay(double _decay);
+        const DVector2& get_centre() const;
+        void set_centre(DVector2 centre);
+        void set_size(double size);
+        void set_decay(double decay);
 
-        virtual Tensor get_tensor(DVector2 pos) = 0;
-        virtual bool force_degenerate(DVector2 pos);
 
-        Tensor get_weighted_tensor(DVector2 pos);
-        double get_tensor_weight(DVector2 pos);
+        Tensor get_weighted_tensor(const DVector2& pos) const;
 };
 
 
@@ -69,39 +70,26 @@ class Grid : public BasisField {
 
 
     public:
-        Grid(double _theta, DVector2 _centre);
-        Grid(double _theta, DVector2 _centre, double _size, double _decay);
+        Grid(double theta, DVector2 centre);
+        Grid(double theta, DVector2 centre, double size, double decay);
 
-        Tensor get_tensor(DVector2 pos) override;
+        Tensor get_tensor(const DVector2& pos) const override;
         void set_theta(double _theta);
 };
 
 class Radial : public BasisField {
     public:
-        Radial(DVector2 _centre);
-        Radial(DVector2 _centre, double _size, double _decay);
+        Radial(DVector2 centre);
+        Radial(DVector2 centre, double size, double decay);
 
 
-        Tensor get_tensor(DVector2 pos) override;
-};
-
-class Roundabout : public BasisField {
-    private:
-        double thickness;
-        double size;
-        
-
-    public:
-        Roundabout(double _thickness, DVector2 _centre, double _size, double _decay);
-        bool force_degenerate(DVector2 pos) override;
-        Tensor get_tensor(DVector2 pos) override;
+        Tensor get_tensor(const DVector2& pos) const override;
 };
 
 
 class TensorField {
     private:
         std::vector<std::unique_ptr<BasisField>> basis_fields;
-        SimplexNoise noise;
 
     public:
         TensorField();
@@ -112,10 +100,8 @@ class TensorField {
         void add_basis_field(std::unique_ptr<BasisField> ptr);
         
 
-        Tensor sample(DVector2 pos);
-        Tensor noisy_sample(DVector2 pos, double noise_size, double strength);
-
-        std::vector<DVector2> get_basis_centres();
+        Tensor sample(const DVector2& pos) const;
+        std::vector<DVector2> get_basis_centres() const;
 };
 
 

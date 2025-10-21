@@ -6,23 +6,34 @@
 #include <random>
 #include <unordered_map>
 #include <vector>
-#include "types.h"
+
+#include "../types.h"
 #include "integrator.h"
 #include "node_storage.h"
 
 #include "../const.h"
 
 
-enum FrontCheck {
+enum IntegrationStatus {
     Continue,
     Terminate,
     Abort
 };
 
+
 struct Integration {
-    std::optional<DVector2> last_delta;
-    FrontCheck status;
+    IntegrationStatus status;
+    DVector2 delta;
     DVector2 integration_front;
+    bool negate; 
+    std::list<DVector2> points;
+
+    Integration(DVector2 seed, bool negate) :
+        status(Continue),
+        integration_front(seed),
+        negate(negate),
+        points({seed})
+    {}
 };
 
 
@@ -65,7 +76,6 @@ class RoadNetworkGenerator {
         using seed_queue = std::queue<DVector2>;
         static constexpr int kQuadTreeDepth = 10; // area of 3 pixels at 1920x1080
         static constexpr int kQuadTreeLeafCapacity = 10;
-        Box<double> viewport_;
 
 
         std::unique_ptr<NumericalFieldIntegrator> integrator_;
@@ -75,60 +85,72 @@ class RoadNetworkGenerator {
         std::default_random_engine gen_;
         std::uniform_real_distribution<double> dist_;
         std::vector<StreamlineNode> nodes_;
-        std::unordered_map<RoadType, Streamlines> streamlines_;
-
-
-        bool in_bounds(DVector2& p) const;
-
-        void add_candidate_seed(node_id id, Direction dir);
-
-        std::optional<DVector2> get_seed(RoadType road, Direction dir);
-
-        void extend_streamline(RoadType road, Integration& i, Direction dir, bool negate);
-        void extend_streamline(RoadType road, Integration& i, Direction dir);
-
+        Box<double> viewport_;
 #ifdef SPATIAL_TEST
     public:
 #endif
-        void push_streamline(RoadType road, std::vector<StreamlineNode>& new_nodes, Streamline& streamline, Direction dir);
+        Spatial spatial_;
 #ifdef SPATIAL_TEST
     private:
 #endif
+        std::unordered_map<RoadType, Streamlines> streamlines_;
 
-        node_id joining_candidate(RoadType road, node_id id, DVector2 initial_direction);
 
-        void douglas_peucker(RoadType road, Streamline& streamline);
-        // void simplify_streamline(int streamline_id, Direction dir);
+        bool in_bounds(const DVector2& p) const;
+
+
+        void add_candidate_seed(node_id id, Direction dir);
+        std::optional<DVector2> get_seed(RoadType road, Direction dir);
+
+
+        void extend_streamline(
+            Integration& res,
+            const RoadType& road,
+            const Direction& dir
+        ) const;
+        std::optional<std::list<DVector2>>
+        generate_streamline(RoadType road, DVector2 seed_point, Direction dir);
+        int generate_streamlines(RoadType road);
+
+        
+        void simplify_streamline(RoadType road, std::list<DVector2>& points) const;
+        void douglas_peucker(
+            const double& epsilon,
+            const double& min_sep2,
+            std::list<DVector2>& points,
+            std::list<DVector2>::iterator begin,
+            std::list<DVector2>::iterator end
+        ) const;
+
+
+#ifdef SPATIAL_TEST
+    public:
+#endif
+        void push_streamline(RoadType road, std::list<DVector2>& points, Direction dir);
+
 
     public:
- 
-        Spatial spatial_;
         RoadNetworkGenerator(
                 std::unique_ptr<NumericalFieldIntegrator>& integrator,
                 std::unordered_map<RoadType, GeneratorParameters>,
                 Box<double> viewport
             );
 
-        void set_viewport(Box<double> new_viewport);
-
-        std::vector<RoadType> get_road_types() const;
-        std::vector<Streamline>& get_streamlines(RoadType road, Direction dir);
-        std::unordered_map<RoadType, GeneratorParameters> get_parameters() const;
-
-        int generate_streamlines(RoadType road);
-        void generate();
-
-        void join_streamlines(Direction dir);
-        void join_streamlines();
-
-        void simplify_streamlines();
-        void clear();
-
-        std::optional<StreamlineNode> get_node(node_id i) const;
-        
-        bool generate_streamline(RoadType road, DVector2 seed_point, Direction dir);
-
+        // getters
+        const std::vector<RoadType>& get_road_types() const;
+        const std::unordered_map<RoadType, GeneratorParameters>& get_parameters() const;
+        const StreamlineNode& get_node(node_id i) const;
+        const std::vector<Streamline>&  get_streamlines(RoadType road, Direction dir);
         int node_count() const;
 
+
+        void set_viewport(Box<double> new_viewport);
+
+
+        void generate();
+        bool generation_step(RoadType road, Direction dir);
+
+
+        void clear();
 };
 #endif

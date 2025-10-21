@@ -8,9 +8,9 @@
 #include <unordered_map>
 #include <vector>
 
-#include "types.h"
-#include "integrator.h"
+#include "../types.h"
 #include "../const.h"
+#include "integrator.h"
 
 enum RoadType {
     Main,
@@ -54,25 +54,21 @@ struct QuadNode {
     Box<double> bbox;
     std::list<node_id> data;
 
-    
-    qnode_id parent = QNullNode;
     qnode_id children[4] = {QNullNode, QNullNode, QNullNode, QNullNode};
 
-    char directions_bitmask; // bit mask saying what direction (Major/Minor) children have
+    char dirs; // bit mask saying what direction (Major/Minor) children have
     
-    QuadNode(Box<double> bounding_box, qnode_id parent_ptr, char directions) :
+    QuadNode(Box<double> bounding_box, char directions) :
         bbox(bounding_box),
-        parent(parent_ptr),
-        directions_bitmask(directions)
+        dirs(directions)
     {}
 };
 
 
 class Spatial {
+private:
 #ifdef SPATIAL_TEST
 public:
-#else
-private:
 #endif
     using iter = std::list<node_id>::iterator;
 
@@ -87,10 +83,10 @@ private:
     int leaf_capacity_;
 
     const DVector2& node_to_pos(const node_id& id) const;
-    const Direction& node_to_dir(const node_id& id) const;
+    char node_to_dir(const node_id& id) const;
 
     std::array<std::pair<char, std::list<node_id>>, 4> 
-    partition(const Box<double>& bbox, std::list<node_id>& s);
+        partition(const Box<double>& bbox, std::list<node_id>& s);
 
     bool is_leaf(qnode_id id) const;
 
@@ -100,12 +96,12 @@ private:
     void subdivide(qnode_id head_ptr);
 
     // add leaf data onto existing node, updating bitmask
-    void append_leaf_data(qnode_id leaf_ptr, char dir_bitmask, std::list<node_id>& data);
+    void append_leaf_data(qnode_id leaf_ptr, char dirs, std::list<node_id>& data);
 
     void insert_rec(
         int depth, 
         qnode_id head_ptr,
-        char dir_bitmask,
+        char dirs,
         std::list<node_id>& list
     );
 
@@ -113,29 +109,31 @@ private:
         qnode_id head_ptr, 
         const Box<double>& circumscribed, 
         const Box<double>& inscribed, 
-        const char& dir_bitmask,
+        const char& dirs,
         const DVector2& centre, 
-        const double& radius2
+        const double& radius2,
+        std::optional<std::list<node_id>>& out 
     ) const;
 
     bool in_bbox_rec(
         qnode_id head_ptr,
         const Box<double>& bbox,
-        const char& dir_bitmask 
+        const char& dirs,
+        std::optional<std::list<node_id>>& out
     ) const;
 
-#ifndef SPATIAL_TEST
+    bool has_nearby_point(DVector2 centre, double radius, char dirs, std::optional<std::list<node_id>>& out) const;
+
 public:
-#endif
     Spatial(std::vector<StreamlineNode>* all_nodes, Box<double> dims, int depth, int leaf_capacity);
 
-    void insert_streamline(std::list<node_id> list, Direction dir);
+    void insert_streamline(Streamline s, char dirs);
 
     void clear();
     void reset(Box<double> new_dims);
     
-    bool has_nearby_point(DVector2 centre, double radius, Direction dir) const;
-    bool has_nearby_point(Box<double> bbox, Direction dir) const;
+    bool has_nearby_point(DVector2 centre, double radius, char dirs) const;
+    std::list<node_id> nearby_points(DVector2 centre, double radius, char dirs) const;
 };
 
 #endif
