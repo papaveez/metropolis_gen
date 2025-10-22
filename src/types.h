@@ -67,15 +67,18 @@ std::ostream& operator<<(std::ostream& os, const TVector2<T>& v) {
     return os << "(" << v.x << "," << v.y << ")";
 }
 
+
 template<typename T>
 T dot_product(const TVector2<T>& a, const TVector2<T>& b) {
     return a.x*b.x + a.y*b.y;
 }
 
+
 template<typename T>
 TVector2<T> middle(TVector2<T> const& p1, TVector2<T> const& p2) {
     return (p1 + p2)/2.0;
 }
+
 
 template<typename T>
 double vector_angle(const TVector2<T>& a, const TVector2<T>& b) {
@@ -85,11 +88,23 @@ double vector_angle(const TVector2<T>& a, const TVector2<T>& b) {
     return atan2(det, dot);
 }
 
-//  TODO: implement
+
 template<typename T>
 double perpendicular_distance(const TVector2<T>& p, const TVector2<T>& x0, const TVector2<T>& x1) {
-    return 0.0;
+    TVector2<T> d = x1 - x0;
+
+    double l2 = dot_product(d, d); // 0 line length
+    if (l2 == 0.0) {
+        TVector2<T> res = x1 - p;
+        double dx = res.x;
+        double dy = res.y;
+        return std::hypot(dx, dy);
+    }
+
+    return
+        std::abs(d.y * p.x - d.x * p.y + x1.x * x0.y - x1.y * x0.x) / std::sqrt(l2);
 }
+
 
 enum Quadrant {
     TopLeft,

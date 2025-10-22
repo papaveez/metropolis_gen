@@ -3,13 +3,16 @@
 
 // ****** Tensor ******
 
-Tensor::Tensor(double a, double b) : a(a), b(b) {
-    set_r_theta();
+Tensor Tensor::from_a_b(const double& a, const double& b) {
+    Tensor out = Tensor {a, b};
+    out.set_r_theta();
+    return out;
 }
+
 
 void Tensor::set_r_theta() {
     r = std::hypot(a, b);
-    if (std::abs(r) <= d_epsilon) {
+    if (is_degenerate()) {
         theta = 0;
     }
     else {
@@ -18,19 +21,21 @@ void Tensor::set_r_theta() {
 }
 
 
-Tensor Tensor::from_r_theta(double r, double theta) {
-    return Tensor(
+Tensor Tensor::from_r_theta(const double& r, const double& theta) {
+    return Tensor {
         r*std::cos(2*theta),
-        r*std::sin(2*theta)
-    );
+        r*std::sin(2*theta),
+        r,
+        theta,
+    };
 }
 
 
-Tensor Tensor::from_xy(DVector2 xy) {
-    double x = xy.x;
-    double y = xy.y;
+Tensor Tensor::from_xy(const DVector2& xy) {
+    const double& x = xy.x;
+    const double& y = xy.y;
 
-    return Tensor(y*y - x*x, -2*x*y);
+    return from_a_b(y*y - x*x, -2*x*y);
 }
 
 
@@ -203,12 +208,14 @@ void TensorField::add_basis_field(std::unique_ptr<BasisField> bf) {
 
 
 Tensor TensorField::sample(const DVector2& pos) const {
-    Tensor out = Tensor(0.0, 0.0); // new degenerate tensor
-                               //
+    Tensor out; // new degenerate tensor
+
     for (auto& x : basis_fields) {
         Tensor basis_field_tensor = x->get_weighted_tensor(pos);
         out = out + basis_field_tensor;
     }
+
+    out.set_r_theta();
 
     return out;
 }

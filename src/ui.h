@@ -132,6 +132,7 @@ private:
 
     bool generated_;
     bool step_mode_ = false;
+    int road_idx_ = 0;
 
     bool mouse_in_viewport();
     

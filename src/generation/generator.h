@@ -23,7 +23,7 @@ enum IntegrationStatus {
 
 struct Integration {
     IntegrationStatus status;
-    DVector2 delta;
+    std::optional<DVector2> delta;
     DVector2 integration_front;
     bool negate; 
     std::list<DVector2> points;
@@ -51,8 +51,8 @@ struct GeneratorParameters {
     double d_lookahead;
     double theta_max; // maximum streamline joining angle
     double epsilon;
-    double noise_size;
-    double noise_angle;
+    double node_sep;
+    double node_sep2;
 
 
     GeneratorParameters(
@@ -65,8 +65,7 @@ struct GeneratorParameters {
         double d_lookahead,
         double theta_max,
         double epsilon,
-        double noise_size,
-        double noise_angle
+        double node_sep
     );
 };
 

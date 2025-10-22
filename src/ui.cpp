@@ -280,9 +280,13 @@ void Renderer::draw_streamlines(RoadType road, Direction dir) const {
             style.colour
         );
 
-        // for (int i=0; i < sl.size() + extra_edge; ++i) {
-        //     DrawCircleV(positions[i], 3, RED);
-        // }
+        Color col = dir == Major ? RED : BLUE;
+        for (int i=0; i < sl.size() + extra_edge; ++i) {
+            DrawCircleV(positions[i], 1, col);
+            if (i>0) {
+                DrawLineV(positions[i-1], positions[i], col);
+            }
+        }
         
         delete[] positions;
     }
@@ -299,9 +303,15 @@ void Renderer::render_map() {
     if (!generated_ && !step_mode_) {
         generator_ptr_->generate();
         generated_ = true;
+
     } else if (step_mode_ && IsKeyPressed(KEY_SPACE)) {
-        if (generator_ptr_->generation_step(Main, dir_))
+        generated_ = true;
+        if (generator_ptr_->generation_step(generator_ptr_->get_road_types()[road_idx_], dir_)) {
             dir_ = flip(dir_);
+        }
+        else if (road_idx_ < generator_ptr_->get_road_types().size()-1) {
+            road_idx_ += 1;
+        }
     }
 
     const std::vector<RoadType>& road_types = generator_ptr_->get_road_types();
@@ -385,6 +395,9 @@ void Renderer::handle_tool_click(const Tool& t) {
         step_mode_ = true;
         mode_ = Map;
     } else if (t == BackToEditor) {
+        step_mode_ = false;
+        generated_ = false;
+        road_idx_ = 0;
         mode_ = FieldEditor;
     } else if (t == Regenerate) {
         generated_ = false;

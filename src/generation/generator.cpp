@@ -7,33 +7,32 @@
 
 
 GeneratorParameters::GeneratorParameters(
-        int _max_seed_retries,
-        int _max_integration_iterations,
-        double _d_sep,
-        double _d_test,
-        double _d_circle,
-        double _dl,
-        double _d_lookahead,
-        double _theta_max,
-        double _epsilon,
-        double _noise_size,
-        double _noise_angle
+        int max_seed_retries,
+        int max_integration_iterations,
+        double d_sep,
+        double d_test,
+        double d_circle,
+        double dl,
+        double d_lookahead,
+        double theta_max,
+        double epsilon,
+        double node_sep
         ) :
-    max_seed_retries(_max_seed_retries),
-    max_integration_iterations(_max_integration_iterations),
-    d_sep(_d_sep),
-    d_sep2(_d_sep*_d_sep),
-    d_test(_d_test),
-    d_test2(_d_test*_d_test),
-    d_circle(_d_circle),
-    d_circle2(_d_circle*_d_circle),
-    dl(_dl),
-    dl2(_dl*_dl),
-    d_lookahead(_d_lookahead),
-    theta_max(_theta_max),
-    epsilon(_epsilon),
-    noise_size(_noise_size),
-    noise_angle(_noise_angle)
+    max_seed_retries(max_seed_retries),
+    max_integration_iterations(max_integration_iterations),
+    d_sep(d_sep),
+    d_sep2(d_sep*d_sep),
+    d_test(d_test),
+    d_test2(d_test*d_test),
+    d_circle(d_circle),
+    d_circle2(d_circle*d_circle),
+    dl(dl),
+    dl2(dl*dl),
+    d_lookahead(d_lookahead),
+    theta_max(theta_max),
+    epsilon(epsilon),
+    node_sep(node_sep),
+    node_sep2(node_sep*node_sep)
 {}
 
 
@@ -89,21 +88,26 @@ void RoadNetworkGenerator::extend_streamline(
         return;
     };
 
-    res.delta = integrator_->integrate(
+    DVector2 delta = integrator_->integrate(
         res.integration_front, 
         dir, 
         params_.at(road).dl
     );
 
     if (res.negate) 
-        res.delta = res.delta*-1.0;
+        delta = delta*-1.0;
 
-    if (dot_product(res.delta, res.delta) < 0.01) {
+    if (res.delta.has_value() && dot_product(res.delta.value(), delta) < 0) {
+        delta = delta*-1.0;
+    }
+
+    if (dot_product(delta, delta) < 0.01) {
         res.status = Abort;
         return;
     }
 
-    res.integration_front = res.integration_front + res.delta;
+    res.integration_front = res.integration_front + delta;
+    res.delta = delta;
     if (!in_bounds(res.integration_front)) {
         res.status = Abort;
         return;
@@ -184,7 +188,6 @@ int RoadNetworkGenerator::generate_streamlines(RoadType road) {
 
         if (new_streamline.has_value()) {
             simplify_streamline(road, new_streamline.value());
-
             push_streamline(road, new_streamline.value(), dir);
             k += 1;
             dir = flip(dir);
@@ -198,7 +201,8 @@ int RoadNetworkGenerator::generate_streamlines(RoadType road) {
 
 
 void RoadNetworkGenerator::simplify_streamline(RoadType road, std::list<DVector2>& points) const {
-    douglas_peucker(params_.at(road).epsilon, 100.0, points, points.begin(), points.end());
+    assert(params_.at(road).epsilon > 0.0);
+    douglas_peucker(params_.at(road).epsilon, params_.at(road).node_sep2, points, points.begin(), points.end());
 }
 
 
@@ -206,22 +210,21 @@ void RoadNetworkGenerator::douglas_peucker(const double& epsilon, const double& 
         std::list<DVector2>& points,
         std::list<DVector2>::iterator begin, std::list<DVector2>::iterator end) const 
 {
+    // must be 3> elements 
     int count = 0;
     for (auto it=begin;it!=end && count < 3;++it, ++count);
     if (count < 3) return;
 
-    auto last = end;
-    std::advance(last, -1);
+    auto last_elem = std::prev(end);
 
     const DVector2& first_pos = *begin;
-    const DVector2& last_pos  = *last;
+    const DVector2& last_pos  = *last_elem;
 
     double d_max = 0.0;
-
     std::list<DVector2>::iterator index;
 
 
-    for (auto it=std::next(begin); it != last; ++it) {
+    for (auto it=std::next(begin); it != last_elem; ++it) {
         double d = perpendicular_distance(*it, first_pos, last_pos);
 
         if (d > d_max) {
@@ -230,26 +233,21 @@ void RoadNetworkGenerator::douglas_peucker(const double& epsilon, const double& 
         }
     }
 
-
     if (d_max > epsilon) {
-        std::list<DVector2> first_part(points.begin(), std::next(index));
-        std::list<DVector2> second_part(index, points.end());
-
-
         douglas_peucker(epsilon, min_sep2, points, begin, std::next(index));
         douglas_peucker(epsilon, min_sep2, points, index, end);
-        return;
-    } 
-    for (auto it=std::next(begin); it!=end;) {
-        auto next = std::next(it);
+    } else {
+        for (auto it=std::next(begin); it!=std::prev(end);) {
+            auto next = std::next(it);
 
-        auto prev = std::prev(it);
-        DVector2 diff = *it - *prev;
-        double dist2 = dot_product(diff, diff);
+            auto prev = std::prev(it);
+            DVector2 diff = *it - *prev;
+            double dist2 = dot_product(diff, diff);
 
-        if (dist2 < min_sep2) points.erase(it);
+            if (dist2 < min_sep2) points.erase(it);
 
-        it = next;
+            it = next;
+        }
     }
 }
 

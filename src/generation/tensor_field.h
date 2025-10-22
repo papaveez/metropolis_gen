@@ -6,36 +6,35 @@
 
 static constexpr double d_epsilon = std::numeric_limits<double>::epsilon();
 
-class Tensor {
+struct Tensor {
     // 2x2 symmetric, traceless matrix represented as
     // R * | cos(2θ)  sin(2θ) | --> | a  b |
     //     | sin(2θ) -cos(2θ) |     | _  _ |
-    public:
-        double r;
-        double theta;
-        double a;
-        double b;
+    double a;
+    double b;
+    double r;
+    double theta;
 
-        Tensor(double a, double b);
-        static Tensor from_r_theta(double r, double theta);
-        static Tensor from_xy(DVector2 xy);
+    static Tensor from_a_b(const double& a, const double& b);
+    static Tensor from_r_theta(const double& r, const double& theta);
+    static Tensor from_xy(const DVector2& xy);
 
-        void set_r_theta();
+    void set_r_theta();
 
-        bool is_degenerate() const;
-        DVector2 get_major_eigenvector() const;
-        DVector2 get_minor_eigenvector() const;
+    bool is_degenerate() const;
+    DVector2 get_major_eigenvector() const;
+    DVector2 get_minor_eigenvector() const;
 
-        Tensor rotate(const double& angle) const;
+    Tensor rotate(const double& angle) const;
 
-        Tensor operator+(const Tensor& other) const;
+    Tensor operator+(const Tensor& other) const;
 
-        // right scalar mult
-        Tensor operator*(const double& right) const;
+    // right scalar mult
+    Tensor operator*(const double& right) const;
 
 
-        // left scalar mult
-        friend Tensor operator*(const double& left, const Tensor& right);
+    // left scalar mult
+    friend Tensor operator*(const double& left, const Tensor& right);
 };
 
 

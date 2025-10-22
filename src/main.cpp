@@ -15,9 +15,9 @@
 
 
 static std::unordered_map<RoadType, GeneratorParameters> params = {
-    {SideStreet, GeneratorParameters(300, 1970, 20.0, 15.0, 5.0, 1.0, 40.0, 0.1, 0.5, 0.0, 0.0)},
-    {HighStreet, GeneratorParameters(300, 3020, 100.0, 30.0, 5.0, 1.0, 200.0, 0.1, 0.5, 0.0, 0.0)},
-    {Main, GeneratorParameters(300, 1900, 400.0, 200.0, 5.0, 1.0, 500.0, 0.1, 0.5, 0.0, 0.0)}
+    {SideStreet, GeneratorParameters(300, 1970,  20.0,  15.0, 5.0, 1.0,  40.0, 0.1, 0.5, 10.0)},
+    {HighStreet, GeneratorParameters(300, 3020, 100.0,  30.0, 8.0, 1.0, 200.0, 0.1, 0.5, 10.0)},
+    {Main,       GeneratorParameters(300, 1900, 400.0, 200.0, 10.0, 1.0, 500.0, 0.1, 0.5, 10.0)}
 };
 
 
