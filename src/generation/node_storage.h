@@ -8,9 +8,9 @@
 #include <unordered_map>
 #include <vector>
 
+#include "integrator.h"
 #include "../types.h"
 #include "../const.h"
-#include "integrator.h"
 
 enum RoadType {
     Main,
@@ -42,7 +42,7 @@ class Streamlines {
         std::vector<Streamline>& get_streamlines(Direction dir);
         void clear();
         void add(Streamline& s, Direction dir);
-        int size(Direction dir);
+        int size(Direction dir) const;
 };
 
 
@@ -72,7 +72,42 @@ public:
 #endif
     using iter = std::list<node_id>::iterator;
 
-    std::vector<StreamlineNode>* all_nodes_;
+    struct BBoxQuery {
+        const char& dirs;
+        const bool& gather;
+        Box<double> inner_bbox;
+        std::list<node_id> harvest;
+    };
+
+    struct CircleQuery : BBoxQuery {
+        const DVector2& centre;
+        const double& radius;
+        double radius2;
+        Box<double> outer_bbox;
+        CircleQuery(const char& dirs, const DVector2& centre, const double& radius, const bool& gather) : 
+            BBoxQuery({dirs, gather}),
+            centre(centre),
+            radius(radius) 
+        {
+            radius2 = radius*radius;
+
+            DVector2 circumscribed_diag = {radius, radius};
+            DVector2 inscribed_diag = circumscribed_diag/M_SQRT2;
+
+            outer_bbox = Box (
+                centre - circumscribed_diag,
+                centre + circumscribed_diag
+            );
+
+
+            inner_bbox = Box(
+                centre - inscribed_diag,
+                centre + inscribed_diag 
+            );
+        }
+    };
+
+    const std::vector<StreamlineNode>* all_nodes_;
 
     Box<double> dimensions_;
 
@@ -88,52 +123,44 @@ public:
     std::array<std::pair<char, std::list<node_id>>, 4> 
         partition(const Box<double>& bbox, std::list<node_id>& s);
 
-    bool is_leaf(qnode_id id) const;
+    bool is_leaf(const qnode_id& id) const;
 
     // moves leaf data into subquadrant
     // void promote_leaf_data(qnode_id head_ptr);
 
-    void subdivide(qnode_id head_ptr);
+    void subdivide(const qnode_id& head_ptr);
 
     // add leaf data onto existing node, updating bitmask
-    void append_leaf_data(qnode_id leaf_ptr, char dirs, std::list<node_id>& data);
+    void append_leaf_data(const qnode_id& leaf_ptr, const char& dirs, std::list<node_id>& data);
 
     void insert_rec(
         int depth, 
-        qnode_id head_ptr,
-        char dirs,
+        const qnode_id& head_ptr,
+        const char& dirs,
         std::list<node_id>& list
     );
 
     bool in_circle_rec(
-        qnode_id head_ptr, 
-        const Box<double>& circumscribed, 
-        const Box<double>& inscribed, 
-        const char& dirs,
-        const DVector2& centre, 
-        const double& radius2,
-        std::optional<std::list<node_id>>& out 
+        const qnode_id& head_ptr,
+        CircleQuery& query
     ) const;
 
     bool in_bbox_rec(
-        qnode_id head_ptr,
-        const Box<double>& bbox,
-        const char& dirs,
-        std::optional<std::list<node_id>>& out
+        const qnode_id& head_ptr,
+        BBoxQuery& query
     ) const;
 
-    bool has_nearby_point(DVector2 centre, double radius, char dirs, std::optional<std::list<node_id>>& out) const;
-
 public:
-    Spatial(std::vector<StreamlineNode>* all_nodes, Box<double> dims, int depth, int leaf_capacity);
+    Spatial(const std::vector<StreamlineNode>* all_nodes, Box<double> dims, int depth, int leaf_capacity);
 
-    void insert_streamline(Streamline s, char dirs);
+    void insert_streamline(Streamline s, const char& dirs);
 
     void clear();
     void reset(Box<double> new_dims);
     
-    bool has_nearby_point(DVector2 centre, double radius, char dirs) const;
-    std::list<node_id> nearby_points(DVector2 centre, double radius, char dirs) const;
+    bool has_nearby_point(const DVector2& centre, const double& radius, const char& dirs) const;
+    std::list<node_id> nearby_points(const DVector2& centre, const double& radius, const char& dirs) const;
 };
+
 
 #endif

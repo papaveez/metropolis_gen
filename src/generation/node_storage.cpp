@@ -30,8 +30,9 @@ void Streamlines::add(Streamline& s, Direction dir) {
     streamlines_[dir].push_back(std::move(s));
 }
 
-int Streamlines::size(Direction dir) {
-    return streamlines_[dir].size();
+int Streamlines::size(Direction dir) const {
+    if (!streamlines_.contains(dir)) return 0;
+    return streamlines_.at(dir).size();
 }
 
 //  SECTION: Spatial
@@ -68,15 +69,17 @@ Spatial::partition(const Box<double>& bbox, std::list<node_id>& s) {
     return out;
 };
 
-bool Spatial::is_leaf(qnode_id id) const {
+
+bool Spatial::is_leaf(const qnode_id& id) const {
     const QuadNode& root_node = qnodes_[id];
     for (int i=0; i<4;++i) {
         if (root_node.children[i] != QNullNode) return false;
     }
     return true;
+
 }
 
-void Spatial::subdivide(qnode_id head_ptr) {
+void Spatial::subdivide(const qnode_id& head_ptr) {
     const Box<double> bbox = qnodes_[head_ptr].bbox;
 
     auto parts = partition(bbox, qnodes_[head_ptr].data);
@@ -98,15 +101,17 @@ void Spatial::subdivide(qnode_id head_ptr) {
     }
 }
 
-void Spatial::append_leaf_data(qnode_id leaf_ptr, char dirs, 
+
+void Spatial::append_leaf_data(const qnode_id& leaf_ptr, const char& dirs, 
     std::list<node_id>& data) 
 {
     qnodes_[leaf_ptr].dirs |= dirs;
     qnodes_[leaf_ptr].data.splice(qnodes_[leaf_ptr].data.end(), data);
 }
 
-void Spatial::insert_rec(int depth, qnode_id head_ptr,
-    char dirs,
+
+void Spatial::insert_rec(int depth, const qnode_id& head_ptr,
+    const char& dirs,
     std::list<node_id>& list) 
 {
     if (depth >= max_depth_) {
@@ -127,7 +132,7 @@ void Spatial::insert_rec(int depth, qnode_id head_ptr,
     
     ++depth;
 
-    for (Quadrant q : {TopLeft, TopRight, BottomLeft, BottomRight}) {
+    for (int q=0; q<4;++q) {
         auto& [sub_dirs, sublist] = parts[q];
 
         if (sublist.empty()) continue;
@@ -136,7 +141,7 @@ void Spatial::insert_rec(int depth, qnode_id head_ptr,
 
         if (child_ptr == QNullNode) {
             child_ptr = qnodes_.size();
-            qnodes_.emplace_back(bbox.get_quadrant(q), 0);
+            qnodes_.emplace_back(bbox.get_quadrant((Quadrant) q), 0);
             qnodes_[head_ptr].children[q] = child_ptr;
         }
         
@@ -153,115 +158,111 @@ void Spatial::insert_rec(int depth, qnode_id head_ptr,
 
 
 bool 
-Spatial::in_circle_rec(qnode_id head_ptr,
-    const Box<double>& circubscribed, const Box<double>& inscribed,
-    const char& dirs, const DVector2& centre, const double& radius2,
-    std::optional<std::list<node_id>>& out) const
-{
+Spatial::in_circle_rec(const qnode_id& head_ptr, CircleQuery& query) const {
     const QuadNode& qnode = qnodes_[head_ptr];
 
-    if (!(qnode.dirs & dirs)) {
+    // terminate if bboxes dont intersect, or no dirs to explore
+    if (!(qnode.dirs & query.dirs) || (query.outer_bbox & qnode.bbox).is_empty()) {
         return false;
     }
 
-    if ((qnode.bbox | inscribed) == inscribed) {
-        return in_bbox_rec(head_ptr, inscribed, dirs, out);
+    // if query.inner_bbox ⊆ qnode.bbox
+    if ((qnode.bbox | query.inner_bbox) == query.inner_bbox) {
+        return in_bbox_rec(head_ptr, query);
     }
 
+    bool flag = false;
+
     if (is_leaf(head_ptr)) {
-        bool has = false;
         for (const node_id& id : qnode.data) {
-            if (!(node_to_dir(id) & dirs)) continue;
-            DVector2 dist = centre - node_to_pos(id);
-            if (dot_product(dist, dist) > radius2) continue;
-            if (out.has_value()) {
-                out.value().push_back(id);
-                has = true;
+            if (!(node_to_dir(id) & query.dirs)) continue;
+
+            DVector2 dist = query.centre - node_to_pos(id);
+            if (dot_product(dist, dist) > query.radius2) continue;
+
+            if (query.gather) {
+                query.harvest.push_back(id);
+                flag = true;
             } else {
                 return true;
             }
         }
-        return has;
+        return flag;
     }
 
-    bool flag = false;
-    for (Quadrant q : {TopLeft, TopRight, BottomLeft, BottomRight}) {
-        const qnode_id& child_ptr = qnodes_[head_ptr].children[q];
+
+    for (int q=0; q<4; ++q) {
+        const qnode_id& child_ptr = qnode.children[q];
 
         if (child_ptr == QNullNode) continue;
         const QuadNode& child_node = qnodes_[child_ptr];
 
-        if (
-            (child_node.bbox & circubscribed).is_empty()
-            || !(child_node.dirs & dirs)
-        ) continue;
 
-        if (in_circle_rec(child_ptr, circubscribed, inscribed, dirs, centre, radius2, out)) {
-            if (out.has_value()) {
+        if (in_circle_rec(child_ptr, query)) {
+            if (query.gather) {
                 flag = true;
-                continue;
+            } else {
+                return true;
             }
-            return true;
         }
     }
 
     return flag;
 }
 
+
 bool 
-Spatial::in_bbox_rec(qnode_id head_ptr, const Box<double>& bbox,
-        const char& dirs,
-        std::optional<std::list<node_id>>& out
-) const {
+Spatial::in_bbox_rec(const qnode_id& head_ptr, BBoxQuery& query) const {
     const QuadNode& qnode = qnodes_[head_ptr];
 
-    if ((bbox | qnode.bbox) == bbox) {
-        if (out.has_value()) {
-            if (!qnode.data.empty()) {
-                for (auto& id : qnode.data) {
-                    if (!(node_to_dir(id) & dirs)) continue; 
-                    out.value().push_back(id);
-                }
-                return !is_leaf(head_ptr) || !qnode.data.empty();
+    if ((query.inner_bbox & qnode.bbox).is_empty() || !(qnode.dirs & query.dirs)) {
+        return false; // boxes dont intersect
+    }
+
+
+    if ((query.inner_bbox | qnode.bbox) == query.inner_bbox) {
+        if (query.gather && !qnode.data.empty()) {
+            for (auto& id : qnode.data) {
+                if (!(node_to_dir(id) & query.dirs)) continue; 
+
+                query.harvest.push_back(id);
             }
-        } else {
+
+            return !is_leaf(head_ptr) || !qnode.data.empty();
+        } else if (!query.gather) {
             return !is_leaf(head_ptr) || !qnode.data.empty();
         }
     }
 
-    if ((bbox & qnode.bbox).is_empty()) {
-        return false; // boxes dont intersect
-    }
+
+    bool flag = false;
 
     if (is_leaf(head_ptr)) {
-        bool has = false;
         for (const node_id& id : qnode.data) {
-            if (bbox.contains(node_to_pos(id)) && (node_to_dir(id) & dirs)) {
-                if (out.has_value()) {
-                    out.value().push_back(id);
-                    has = true;
+            if (query.inner_bbox.contains(node_to_pos(id)) && (node_to_dir(id) & query.dirs)) {
+                if (query.gather) {
+                    query.harvest.push_back(id);
+                    flag = true;
                 } else {
                     return true;
                 }
             }
         }
-        return has;
+        return flag;
     }
 
     // otherwise, check children
-    bool flag = false;
     for (int i=0;i<4;++i) {
+        const qnode_id& child_ptr = qnode.children[i];
         // node is null
-        if (qnode.children[i] == QNullNode) continue;
-        // node has no children with dir
-        if ((qnodes_[qnode.children[i]].dirs & dirs) == 0) continue;
+        if (child_ptr == QNullNode) continue;
 
-        if (in_bbox_rec(qnode.children[i], bbox, dirs, out)) {
-            if (out.has_value()) {
+        if (in_bbox_rec(child_ptr, query)) {
+            if (query.gather) {
                 flag = true;
-                continue;
+            } else {
+                return true;
             }
-            return true;
         }
     }
 
@@ -269,29 +270,7 @@ Spatial::in_bbox_rec(qnode_id head_ptr, const Box<double>& bbox,
 }
 
 
-bool Spatial::has_nearby_point(DVector2 centre, double radius, char dirs, std::optional<std::list<node_id>>& out) const {
-    DVector2 circumscribed_diag = {radius, radius};
-    DVector2 inscribed_diag = circumscribed_diag/M_SQRT2;
-
-    Box<double> inscribed = Box(
-        centre - circumscribed_diag, 
-        centre + circumscribed_diag 
-    ) & dimensions_;
-
-    Box<double> circumscribed = Box(
-        centre - inscribed_diag,
-        centre + inscribed_diag 
-    );
-
-    if (circumscribed.is_empty() || !(qnodes_[root_].dirs & dirs)) {
-        return false;
-    }
-
-    return in_circle_rec(root_, circumscribed, inscribed, dirs, centre, radius*radius, out);
-}
-
-
-Spatial::Spatial(std::vector<StreamlineNode>* all_nodes, 
+Spatial::Spatial(const std::vector<StreamlineNode>* all_nodes, 
     Box<double> dims, int depth, int leaf_capacity) :
     all_nodes_(all_nodes),
     dimensions_(dims),  
@@ -302,11 +281,13 @@ Spatial::Spatial(std::vector<StreamlineNode>* all_nodes,
     qnodes_.emplace_back(dimensions_, 0);
 }
 
+
 void Spatial::clear() {
     qnodes_.clear();
     root_ = 0;
     qnodes_.emplace_back(dimensions_, std::numeric_limits<char>::max());
 }
+
 
 void Spatial::reset(Box<double> new_dims) {
     dimensions_ = new_dims;
@@ -314,7 +295,7 @@ void Spatial::reset(Box<double> new_dims) {
 }
 
 // copies the list.
-void Spatial::insert_streamline(Streamline s, char dir) {
+void Spatial::insert_streamline(Streamline s, const char& dir) {
     if (s.size() == 0) return;
 
     iter begin = s.begin();
@@ -337,15 +318,14 @@ void Spatial::insert_streamline(Streamline s, char dir) {
 }
 
 
-
-bool Spatial::has_nearby_point(DVector2 centre, double radius, char dirs) const {
-    std::optional<std::list<node_id>> out;
-    return has_nearby_point(centre, radius, dirs, out);
+bool Spatial::has_nearby_point(const DVector2& centre, const double& radius, const char& dirs) const {
+    CircleQuery query(dirs, centre, radius, false);
+    return in_circle_rec(root_, query);
 }
 
-std::list<node_id> Spatial::nearby_points(DVector2 centre, double radius, char dirs) const {
-    std::optional<std::list<node_id>> out = std::list<node_id>{};
-    has_nearby_point(centre, radius, dirs, out);
-    return out.value();
-}
 
+std::list<node_id> Spatial::nearby_points(const DVector2& centre, const double& radius, const char& dirs) const {
+    CircleQuery query(dirs, centre, radius, true);
+    in_circle_rec(root_, query);
+    return query.harvest;
+}

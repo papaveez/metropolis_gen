@@ -135,6 +135,7 @@ class RoadGenerator {
             const DVector2& road_direction, const std::unordered_set<node_id>& forbidden) const;
         void connect_roads(RoadType road, Direction dir);
         // void connect(Streamline& s, const node_id& endpoint, const node_id& other);
+        void add_intersections(RoadType road, Direction dir, Streamline& s);
 
 
     public:
@@ -150,6 +151,7 @@ class RoadGenerator {
         const StreamlineNode& get_node(node_id i) const;
         const std::vector<Streamline>&  get_streamlines(RoadType road, Direction dir);
         int node_count() const;
+        int streamline_count() const;
 
 
         void set_viewport(Box<double> new_viewport);

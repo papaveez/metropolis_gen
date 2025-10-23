@@ -376,6 +376,23 @@ void RoadGenerator::connect_roads(RoadType road, Direction dir) {
 }
 
 
+// void RoadGenerator::add_intersections(RoadType road, Direction dir, Streamline& s) {
+//     const double& sep = params_.at(road).node_sep;
+//
+//     for (auto it = s.begin(); it != s.end(); ++it) {
+//         std::list<node_id> nearby_opposite_dir = spatial_.nearby_points(nodes_[*it].pos, sep, flip(dir));
+//         if (nearby_opposite_dir.empty()) continue;
+//
+//         // create shared point
+//         std::optional<node_id> closest;
+//         double d_min = 
+//
+//         for (const node_id& id : nearby_opposite_dir) {
+//             if (dot_product(const TVector2<T> &a, const TVector2<T> &b))
+//         }
+//     }
+// }
+
 
 RoadGenerator::RoadGenerator(
         std::unique_ptr<NumericalFieldIntegrator>& integrator,
@@ -431,6 +448,17 @@ int RoadGenerator::node_count() const {
 }
 
 
+int RoadGenerator::streamline_count() const {
+    int count;
+    for (const RoadType& road : road_types_) {
+        if (!streamlines_.contains(road)) continue;
+        count += streamlines_.at(road).size(Major);
+        count += streamlines_.at(road).size(Minor);
+    }
+    return count;
+}
+
+
 void RoadGenerator::set_viewport(Box<double> new_viewport) {
     viewport_ = std::move(new_viewport);
 }
@@ -467,6 +495,7 @@ void RoadGenerator::generate() {
     }
 
     std::cout << "node count: " << node_count() << std::endl;
+    std::cout << "streamline count: " << streamline_count() << std::endl;
 }
 
 
