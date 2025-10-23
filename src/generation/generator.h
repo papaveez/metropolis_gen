@@ -5,6 +5,7 @@
 #include <queue>
 #include <random>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #include "../types.h"
@@ -70,7 +71,7 @@ struct GeneratorParameters {
 };
 
 
-class RoadNetworkGenerator {
+class RoadGenerator {
     private:
         using seed_queue = std::queue<DVector2>;
         static constexpr int kQuadTreeDepth = 10; // area of 3 pixels at 1920x1080
@@ -84,7 +85,9 @@ class RoadNetworkGenerator {
         std::default_random_engine gen_;
         std::uniform_real_distribution<double> dist_;
         std::vector<StreamlineNode> nodes_;
+        int min_streamline_size_ = 5;
         Box<double> viewport_;
+
 #ifdef SPATIAL_TEST
     public:
 #endif
@@ -127,9 +130,15 @@ class RoadNetworkGenerator {
 #endif
         void push_streamline(RoadType road, std::list<DVector2>& points, Direction dir);
 
+        std::optional<node_id> 
+        joining_candidate(const double& rad, const double& max_node_sep, const double& theta_max, const DVector2& pos, 
+            const DVector2& road_direction, const std::unordered_set<node_id>& forbidden) const;
+        void connect_roads(RoadType road, Direction dir);
+        // void connect(Streamline& s, const node_id& endpoint, const node_id& other);
+
 
     public:
-        RoadNetworkGenerator(
+        RoadGenerator(
                 std::unique_ptr<NumericalFieldIntegrator>& integrator,
                 std::unordered_map<RoadType, GeneratorParameters>,
                 Box<double> viewport

@@ -1,10 +1,11 @@
 #include "generator.h"
+#include "integrator.h"
+#include "node_storage.h"
 
 #include <cassert>
 #include <iostream>
 #include <iterator>
 #include <list>
-
 
 GeneratorParameters::GeneratorParameters(
         int max_seed_retries,
@@ -36,21 +37,21 @@ GeneratorParameters::GeneratorParameters(
 {}
 
 
-//  SECTION: RoadNetworkGenerator
+//  SECTION: RoadGenerator
 
-bool RoadNetworkGenerator::in_bounds(const DVector2& p) const {
+bool RoadGenerator::in_bounds(const DVector2& p) const {
     return viewport_.contains(p);
 }
 
 
-void RoadNetworkGenerator::add_candidate_seed(node_id id, Direction dir) {
+void RoadGenerator::add_candidate_seed(node_id id, Direction dir) {
     DVector2 seed = nodes_[id].pos;
     seeds_[dir].push(seed);
 }
 
 
 std::optional<DVector2> 
-RoadNetworkGenerator::get_seed(RoadType road, Direction dir) {
+RoadGenerator::get_seed(RoadType road, Direction dir) {
     seed_queue& candidate_queue = seeds_[dir];
 
     DVector2 seed;
@@ -78,7 +79,7 @@ RoadNetworkGenerator::get_seed(RoadType road, Direction dir) {
 }
 
 
-void RoadNetworkGenerator::extend_streamline(
+void RoadGenerator::extend_streamline(
     Integration& res,
     const RoadType& road, 
     const Direction& dir
@@ -121,7 +122,7 @@ void RoadNetworkGenerator::extend_streamline(
 
 
 std::optional<std::list<DVector2>>
-RoadNetworkGenerator::generate_streamline(RoadType road, DVector2 seed_point, Direction dir) {
+RoadGenerator::generate_streamline(RoadType road, DVector2 seed_point, Direction dir) {
     Integration forward  (seed_point, false);
     Integration backward (seed_point, true );
 
@@ -177,7 +178,7 @@ RoadNetworkGenerator::generate_streamline(RoadType road, DVector2 seed_point, Di
 }
 
 
-int RoadNetworkGenerator::generate_streamlines(RoadType road) {
+int RoadGenerator::generate_streamlines(RoadType road) {
     Direction dir = Major;
 
     std::optional<DVector2> seed = get_seed(road, dir);
@@ -188,25 +189,32 @@ int RoadNetworkGenerator::generate_streamlines(RoadType road) {
 
         if (new_streamline.has_value()) {
             simplify_streamline(road, new_streamline.value());
-            push_streamline(road, new_streamline.value(), dir);
-            k += 1;
-            dir = flip(dir);
+
+            if (new_streamline.value().size() >= min_streamline_size_) {
+                push_streamline(road, new_streamline.value(), dir);
+                k += 1;
+                dir = flip(dir);
+            }
         }
         
         seed = get_seed(road, dir);
     };
 
+
+    connect_roads(road, Major);
+    connect_roads(road, Minor);
+
     return k;
 }
 
 
-void RoadNetworkGenerator::simplify_streamline(RoadType road, std::list<DVector2>& points) const {
+void RoadGenerator::simplify_streamline(RoadType road, std::list<DVector2>& points) const {
     assert(params_.at(road).epsilon > 0.0);
     douglas_peucker(params_.at(road).epsilon, params_.at(road).node_sep2, points, points.begin(), points.end());
 }
 
 
-void RoadNetworkGenerator::douglas_peucker(const double& epsilon, const double& min_sep2, 
+void RoadGenerator::douglas_peucker(const double& epsilon, const double& min_sep2, 
         std::list<DVector2>& points,
         std::list<DVector2>::iterator begin, std::list<DVector2>::iterator end) const 
 {
@@ -252,7 +260,7 @@ void RoadNetworkGenerator::douglas_peucker(const double& epsilon, const double& 
 }
 
 
-void RoadNetworkGenerator::push_streamline(RoadType road, std::list<DVector2>& points, Direction dir) {
+void RoadGenerator::push_streamline(RoadType road, std::list<DVector2>& points, Direction dir) {
     int new_streamline_id = streamlines_[road].size(dir);
     int new_node_id = node_count();
     Streamline out;
@@ -276,8 +284,100 @@ void RoadNetworkGenerator::push_streamline(RoadType road, std::list<DVector2>& p
     streamlines_[road].add(out, dir);
 }
 
+// standard joining candidate algorithm
+std::optional<node_id>
+RoadGenerator::joining_candidate(const double& rad, const double& max_node_sep2, const double& theta_max, 
+    const DVector2& pos, const DVector2& road_direction, const std::unordered_set<node_id>& forbidden) const 
+{
+    std::list<node_id> nearby = 
+        spatial_.nearby_points(pos, rad, Major | Minor);
 
-RoadNetworkGenerator::RoadNetworkGenerator(
+    std::optional<node_id> best_node;
+    double min_dist2 = std::numeric_limits<double>::infinity();
+
+    for (const node_id& candidate_id : nearby) {
+        if (forbidden.contains(candidate_id)) continue;
+
+        DVector2 join_vector = nodes_[candidate_id].pos-pos;
+        
+        if (dot_product(join_vector, road_direction) < 0) continue; // opposite directions.
+
+        double d2 = dot_product(join_vector, join_vector);
+
+        if (d2 < max_node_sep2)
+            return candidate_id;
+
+
+        double theta = std::abs(vector_angle(road_direction, join_vector));
+
+        if (theta < theta_max && d2 < min_dist2) {
+            min_dist2 = d2;
+            best_node = candidate_id;
+        }
+    }
+
+    return best_node;
+}
+
+void RoadGenerator::connect_roads(RoadType road, Direction dir) {
+    int k = 0;
+    for (Streamline& s : streamlines_[road].get_streamlines(dir)) {
+        if (s.front() == s.back()) continue; // ignore circles
+        
+        DVector2 front_pos = nodes_[s.front()].pos;
+        DVector2 back_pos = nodes_[s.back()].pos;
+
+        std::unordered_set<node_id> front_forbidden;
+        std::unordered_set<node_id> back_forbidden;
+
+
+        // first min_streamline_size_ nodes
+        Streamline::iterator last_front_forbidden = std::next(s.begin(), min_streamline_size_-1);
+        for (auto it = s.begin(); it != last_front_forbidden; ++it) {
+            front_forbidden.insert(*it);
+        }
+
+        // DVector2 front_direction = front_pos - nodes_[*std::prev(last_forbidden)].pos;
+        DVector2 front_direction = front_pos - nodes_[*last_front_forbidden].pos;
+        
+
+
+        Streamline::iterator last_back_forbidden = std::prev(s.end(), min_streamline_size_);
+        for (auto it = std::prev(s.end()); it != last_back_forbidden; ++it) {
+            back_forbidden.insert(*it);
+        }
+
+
+        DVector2 back_direction = back_pos - nodes_[*last_back_forbidden].pos;
+
+
+        std::optional<node_id> front_join 
+            = joining_candidate(params_.at(road).d_lookahead, params_.at(road).node_sep2, params_.at(road).theta_max,
+                    front_pos, front_direction, front_forbidden);    
+        std::optional<node_id> back_join
+            = joining_candidate(params_.at(road).d_lookahead, params_.at(road).node_sep2, params_.at(road).theta_max,
+                    back_pos, back_direction, back_forbidden);
+
+        if (front_join.has_value()) {
+            // connect(s, s.front(), front_join.value());
+            s.push_front(front_join.value());
+            ++k;
+        }
+
+        if (back_join.has_value()) {
+            // connect(s, s.back(), back_join.value());
+            s.push_back(back_join.value());
+            ++k;
+        }
+
+    }
+
+    std::cout << "Connected " << k << " roads" <<std::endl;
+}
+
+
+
+RoadGenerator::RoadGenerator(
         std::unique_ptr<NumericalFieldIntegrator>& integrator,
         std::unordered_map<RoadType, GeneratorParameters> parameters,
         Box<double> viewport
@@ -302,41 +402,41 @@ RoadNetworkGenerator::RoadNetworkGenerator(
 
 
 const std::vector<RoadType>&
-RoadNetworkGenerator::get_road_types() const {
+RoadGenerator::get_road_types() const {
     return road_types_;
 }
 
 
 const std::unordered_map<RoadType, GeneratorParameters>&
-RoadNetworkGenerator::get_parameters() const {
+RoadGenerator::get_parameters() const {
     return params_;
 }
 
 
 const StreamlineNode&
-RoadNetworkGenerator::get_node(node_id i) const {
+RoadGenerator::get_node(node_id i) const {
     assert(0 <= i && i < nodes_.size());
     return nodes_[i];
 }
 
 
 const std::vector<Streamline>& 
-RoadNetworkGenerator::get_streamlines(RoadType road, Direction dir) {
+RoadGenerator::get_streamlines(RoadType road, Direction dir) {
     return streamlines_[road].get_streamlines(dir);
 }
 
 
-int RoadNetworkGenerator::node_count() const {
+int RoadGenerator::node_count() const {
     return nodes_.size();
 }
 
 
-void RoadNetworkGenerator::set_viewport(Box<double> new_viewport) {
+void RoadGenerator::set_viewport(Box<double> new_viewport) {
     viewport_ = std::move(new_viewport);
 }
 
 
-bool RoadNetworkGenerator::generation_step(RoadType road, Direction dir) {
+bool RoadGenerator::generation_step(RoadType road, Direction dir) {
     std::optional<DVector2> seed = get_seed(road, dir);
     if (!seed.has_value()) {
         return false;
@@ -355,7 +455,7 @@ bool RoadNetworkGenerator::generation_step(RoadType road, Direction dir) {
 }
 
 
-void RoadNetworkGenerator::generate() {
+void RoadGenerator::generate() {
     clear();
 
     spatial_.reset(viewport_);
@@ -370,7 +470,7 @@ void RoadNetworkGenerator::generate() {
 }
 
 
-void RoadNetworkGenerator::clear() {
+void RoadGenerator::clear() {
     // empty everything
     seeds_.clear();
     seeds_.reserve(2);

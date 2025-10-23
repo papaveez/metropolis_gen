@@ -108,7 +108,7 @@ class Renderer {
 private:
     RenderContext& ctx_;
     TensorField* tf_ptr_;
-    RoadNetworkGenerator* generator_ptr_;
+    RoadGenerator* generator_ptr_;
 
     std::unordered_map<RoadType, RoadStyle> road_styles_ = {
         {Main, RoadStyle::default_roadstyle(Main)},
@@ -153,7 +153,7 @@ private:
 
 
 public:
-    Renderer(RenderContext& ctx, TensorField* tf_ptr, RoadNetworkGenerator* gen_ptr);
+    Renderer(RenderContext& ctx, TensorField* tf_ptr, RoadGenerator* gen_ptr);
     void main_loop();
 };
 

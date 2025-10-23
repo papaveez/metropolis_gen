@@ -38,7 +38,7 @@ int main(int argc, char** argv)
     std::unique_ptr<NumericalFieldIntegrator> itg =
         std::make_unique<RK4>(&tf);
 
-    RoadNetworkGenerator generator = RoadNetworkGenerator(
+    RoadGenerator generator = RoadGenerator(
             itg,
             params,
             ctx.viewport

@@ -1,8 +1,11 @@
 #ifndef TYPES_H 
 #define TYPES_H 
 
+#include <cassert>
+#include <cmath>
 #include <limits>
 #include <ostream>
+#include <unordered_map>
 
 #include "raylib.h"
 
@@ -255,6 +258,62 @@ Box<T> bounding_box(Iterator begin, Iterator end) {
     }
     return out;
 }
+
+
+// probability distribution
+
+template<typename T>
+class Distribution{
+private:
+    std::vector<T> sorted_support_;
+    std::unordered_map<T, int> freqs_;
+    size_t n_;
+
+
+
+
+public:
+    Distribution(std::unordered_map<T, int> frequencies) : freqs_(frequencies) {
+        for (const auto& [key, value] : freqs_) {
+            sorted_support_.push_back(key);
+            n_ += value;
+        }
+
+        std::sort(sorted_support_);
+    }
+
+    void add_observation(const T& x) {
+        // i don't care if its zero, it should have been initialised anyway, support must be known
+        assert(freqs_.contains(x)); 
+        freqs_[x]++;
+    }
+
+    const size_t& get_sample_size() const {
+        return n_;
+    }
+
+    std::optional<double> p(const T& x) const {
+        return freqs_[x];
+    }
+
+    double kl_divergence(const Distribution<T>& other) const {
+        // kl divergence between distributions
+        // assumes they have the same bins
+        // how well does q approximate this
+
+        double out;
+        for (const T& x : sorted_support_) {
+            std::optional<double> q = other.p(x);
+            assert(q.has_value());
+
+            double p = p(x).value();
+
+            out += p * std::log(p/q.value());
+        }
+
+        return out;
+    }
+};
 
 
 // useful type aliases

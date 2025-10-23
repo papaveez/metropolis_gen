@@ -420,7 +420,7 @@ void Renderer::reset_field_editor() {
 Renderer::Renderer(
         RenderContext& ctx, 
         TensorField* tf_ptr, 
-        RoadNetworkGenerator* gen_ptr
+        RoadGenerator* gen_ptr
     ) : 
     ctx_(ctx),
     tf_ptr_(tf_ptr),
